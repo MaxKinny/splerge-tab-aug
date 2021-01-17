@@ -107,22 +107,25 @@ class SplitTableDataset(torch.utils.data.Dataset):
             right = min(diff[diff > 0])
 
             # Re-align the seperators passing through an ocr bounding box
-            if left == 0 and right == 1:
-                if col == 1 or col == img.shape[1] - 1:
-                    continue
-                diff_zeros = zero_cols - col
-                left_align = min(-diff_zeros[diff_zeros < 0])
-                right_align = min(diff_zeros[diff_zeros > 0])
+            try:
+                if left == 0 and right == 1:
+                    if col == 1 or col == img.shape[1] - 1:
+                        continue
+                    diff_zeros = zero_cols - col
+                    left_align = min(-diff_zeros[diff_zeros < 0])
+                    right_align = min(diff_zeros[diff_zeros > 0])
 
-                if min(left_align, right_align) < 20:
-                    if left_align < right_align:
-                        col -= left_align
-                    else:
-                        col += right_align
+                    if min(left_align, right_align) < 20:
+                        if left_align < right_align:
+                            col -= left_align
+                        else:
+                            col += right_align
 
-                    diff = non_zero_cols - col
-                    left = min(-diff[diff < 0]) - 1
-                    right = min(diff[diff > 0])
+                        diff = non_zero_cols - col
+                        left = min(-diff[diff < 0]) - 1
+                        right = min(diff[diff > 0])
+            except Exception as e:
+                pass
 
             col_gt_mask[col - left : col + right] = 255
 
@@ -134,22 +137,25 @@ class SplitTableDataset(torch.utils.data.Dataset):
             below = min(diff[diff > 0])
 
             # Re-align the seperators passing through an ocr bounding box
-            if above == 0 and below == 1:
-                if row == 1 or row == img.shape[0] - 1:
-                    continue
-                diff_zeros = zero_rows - row
-                above_align = min(-diff_zeros[diff_zeros < 0])
-                below_align = min(diff_zeros[diff_zeros > 0])
+            try:
+                if above == 0 and below == 1:
+                    if row == 1 or row == img.shape[0] - 1:
+                        continue
+                    diff_zeros = zero_rows - row
+                    above_align = min(-diff_zeros[diff_zeros < 0])
+                    below_align = min(diff_zeros[diff_zeros > 0])
 
-                if min(above_align, below_align) < 20:
-                    if above_align < below_align:
-                        row -= above_align
-                    else:
-                        row += below_align
+                    if min(above_align, below_align) < 20:
+                        if above_align < below_align:
+                            row -= above_align
+                        else:
+                            row += below_align
 
-                    diff = non_zero_rows - row
-                    above = min(-diff[diff < 0]) - 1
-                    below = min(diff[diff > 0])
+                        diff = non_zero_rows - row
+                        above = min(-diff[diff < 0]) - 1
+                        below = min(diff[diff > 0])
+            except Exception as e:
+                pass
 
             row_gt_mask[row - above : row + below] = 255
         return cv2.cvtColor(img, cv2.COLOR_BGR2RGB).astype(np.float32), row_gt_mask, col_gt_mask
