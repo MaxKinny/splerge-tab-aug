@@ -66,6 +66,7 @@ class Split_RPN(torch.nn.Module):
         )
 
         self.row_conv_1x1_bottom = torch.nn.Conv2d(18, 1, kernel_size=1)
+        self.dropout = torch.nn.Dropout(p=0.5)
 
     def forward(self, x):
         batch_size, channels, height, width = x.shape
@@ -87,6 +88,8 @@ class Split_RPN(torch.nn.Module):
 
         bottom_branch_x = self.row_conv_1x1_bottom(out_feature)
         bottom_branch_row_means = torch.mean(bottom_branch_x, dim=3)
+        if self.block_num > 2:
+            bottom_branch_row_means = self.dropout(bottom_branch_row_means)
         bottom_branch_proj_pools = bottom_branch_row_means.view(
             batch_size, 1, height, 1
         ).repeat(1, 1, 1, bottom_branch_x.shape[3])
@@ -147,6 +150,7 @@ class Split_CPN(torch.nn.Module):
 
         # 1x1 convolution for bottom branch
         self.col_conv_1x1_bottom = torch.nn.Conv2d(18, 1, kernel_size=1)
+        self.dropout = torch.nn.Dropout(p=0.5)
 
     def forward(self, x):
         batch_size, channels, height, width = x.shape
@@ -168,6 +172,8 @@ class Split_CPN(torch.nn.Module):
 
         bottom_branch_x = self.col_conv_1x1_bottom(out_feature)
         bottom_branch_col_means = torch.mean(bottom_branch_x, dim=2)
+        if self.block_num > 2:
+            bottom_branch_col_means = self.dropout(bottom_branch_col_means)
         bottom_branch_proj_pools = bottom_branch_col_means.view(
             batch_size, 1, 1, width
         ).repeat(1, 1, bottom_branch_x.shape[2], 1)
