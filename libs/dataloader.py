@@ -18,20 +18,16 @@ class SplitTableDataset(torch.utils.data.Dataset):
     def __init__(
         self,
         root,
-        train_images_path,
-        train_labels_path,
-        train_ocr_path,
         transforms=None,
         fix_resize=False,
         augment=False
     ):
 
         self.fix_resize = fix_resize
-        self.root = root
         self.transforms = transforms
-        self.train_images_path = train_images_path
-        self.train_labels_path = train_labels_path
-        self.train_ocr_path = train_ocr_path
+        self.train_images_path = os.path.join(root, "images")
+        self.train_labels_path = os.path.join(root, "gt")
+        self.train_ocr_path    = os.path.join(root, "ocr")
 
         self.augment = augment
 
@@ -40,7 +36,7 @@ class SplitTableDataset(torch.utils.data.Dataset):
         # cprint(self.train_labels_path, "yellow")
 
         self.filenames = list(
-            sorted(os.listdir(os.path.join(self.root, self.train_images_path)))
+            sorted(os.listdir(self.train_images_path))
         )
         self.filenames = list(map(lambda name: os.path.basename(name).rsplit('.', 1)[0], self.filenames))
 
