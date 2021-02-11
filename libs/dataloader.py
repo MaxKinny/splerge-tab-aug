@@ -6,6 +6,7 @@ import random
 import torch
 import numpy as np
 import cv2
+import torchvision.transforms.functional as TF
 
 from termcolor import cprint
 
@@ -19,7 +20,7 @@ def generate_gauss(center, shape=(5, 5)):
     gauss = np.zeros(shape)
     for i in range(shape[0]):
         for j in range(shape[1]):
-            gauss[i, j] = 1 / (4 ** (abs((i - center[0])) + abs((j - center[1]))))
+            gauss[i, j] = 1 / (2 ** max(0, abs((i - center[0])) + abs((j - center[1])) - 1))
     return gauss
 
 class SplitTableDataset(torch.utils.data.Dataset):
@@ -48,13 +49,15 @@ class SplitTableDataset(torch.utils.data.Dataset):
         )
         self.filenames = list(map(lambda name: os.path.basename(name).rsplit('.', 1)[0], self.filenames))
 
-        self.col_steps = [1, 3, 5, 7, 9]
-        self.row_steps = [1, 4, 6, 9, 13]
+        self.col_steps = [0, 4, 6, 9]
+        self.row_steps = [0, 4, 6, 9, 13]
         if self.augment:
             print("Reading:  Augmentation Data...")
             self.distribution = self.read_distributions()
             self.nodes, self.probs = self.read_nodes()
             print("Complete: Augmentation Data.")
+
+        self.classical_augment = False
 
     def read_distributions(self):
         with open("distributions/icdar_metadata.pkl", "rb") as f:
@@ -72,11 +75,12 @@ class SplitTableDataset(torch.utils.data.Dataset):
             rc_categorized[-1, j] = rc_distribution[self.row_steps[-1]:, col_start:col_end].sum()
 
         rc_categorized[-1, -1] = rc_distribution[self.row_steps[-1]:, self.col_steps[-1]:].sum()
+        rc_categorized += 0.01
 
         return rc_categorized
 
     def read_nodes(self):
-        with open("distributions/icdar_nodes.pkl", "rb") as f:
+        with open("distributions/icdar_nodes_3.pkl", "rb") as f:
             file_to_nodes = pickle.load(f)
 
         file_to_probs = {}
@@ -84,25 +88,25 @@ class SplitTableDataset(torch.utils.data.Dataset):
             categorized = [[[] for i in range(len(self.col_steps))] for j in range(len(self.row_steps))]
 
             gauss = None
-            for idx, node in enumerate(file_to_nodes[filename]):
-                r_idx = -1
-                c_idx = -1
-                for i, row in enumerate(self.row_steps):
-                    if node[0]['h'] < row:
-                        r_idx = i
-                        break
-                for i, col in enumerate(self.col_steps):
-                    if node[0]['w'] < col:
-                        c_idx = i
-                        break
-                if r_idx == -1:
-                    r_idx += len(self.row_steps)
-                if c_idx == -1:
-                    c_idx += len(self.col_steps)
+            def find_bin(seperators, val):
+                for i, sep in enumerate(seperators):
+                    if val < sep:
+                        return i - 1
+                return len(seperators) - 1
 
-                if idx == 0:
-                    gauss = generate_gauss((r_idx, c_idx), shape=(len(self.row_steps), len(self.col_steps)))
+            for idx, node in enumerate(file_to_nodes[filename]):
+                r_idx = find_bin(self.row_steps, node[0]['h'])
+                c_idx = find_bin(self.col_steps, node[0]['w'])
+
                 categorized[r_idx][c_idx].append(node)
+
+            doc = Document(os.path.join(self.train_labels_path, filename + ".xml"))
+            assert len(doc.tables) == 1
+            table = doc.tables[0]
+    
+            r_idx = find_bin(self.row_steps, len(table.gtCells))
+            c_idx = find_bin(self.col_steps, len(table.gtCells[0]))
+            gauss = generate_gauss((r_idx, c_idx), shape=(len(self.row_steps), len(self.col_steps)))
 
             freqs = np.array(list(map(lambda x: list(map(len, x)), categorized)))
 
@@ -148,7 +152,10 @@ class SplitTableDataset(torch.utils.data.Dataset):
         table = doc.tables[0]
 
         if self.augment is True:
+            # cv2.imshow("before aug", img)
             table, img, ocr = self.apply_augmentation(filename, table, img.copy(), ocr.copy())
+            # cv2.imshow("after  aug", img)
+            # cv2.waitKey(0)
 
         ocr_mask = np.zeros_like(img)
         for word in ocr:
@@ -254,6 +261,25 @@ class SplitTableDataset(torch.utils.data.Dataset):
             # transpose (H, W, C) -> (C, H, W)
             image = image.transpose((2, 0, 1))
 
+        # if self.classical_augment:
+        #     # Horizontal cropping
+        #     if random.random() > 0.5:
+        #         h, w = image.shape[1:]
+        #         crop_w = random.randint(int(w * 0.6), w)
+        #         x = random.randint(0, (w - crop_w))
+
+        #         crop_h = random.randint(int(h * 0.6), h)
+        #         y = random.randint(0, (h - crop_h))
+
+        #         print("Shape before": image.shape)
+        #         image = image[:, y: y+crop_h, x: x + crop_w]
+        #         print("Shape after": image.shape)
+        #         row_label = row_label[x: x+crop_w]
+        #         print("Row labels": row_label.shape)
+        #         col_label = col_label[y: y+crop_h]
+        #         print("Col labels": col_label.shape)
+                
+
         C, H, W = image.shape
         image = resize_image(image, fix_resize=self.fix_resize)
 
@@ -273,7 +299,8 @@ class SplitTableDataset(torch.utils.data.Dataset):
 
         # image_write[row_label[0] == 255, :, :] = [255, 0, 255]
         # image_write[:, col_label[0] == 255, :] = [255, 0, 255]
-        # cv2.imwrite("debug/{}_labels.png".format(self.filenames[idx]), image_write)
+        # cv2.imshow("labels.png", image_write)
+        # cv2.waitKey(0)
 
         row_label[row_label > 0] = 1
         col_label[col_label > 0] = 1
