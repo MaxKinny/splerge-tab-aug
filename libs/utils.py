@@ -37,6 +37,7 @@ def getBack(var_grad_fn):
 
 def normalize_numpy_image(image):
     # Normalizing image
+    image = image / 255.0
     norm = tvtsf.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     image = norm(torch.from_numpy(image))
 
@@ -45,21 +46,20 @@ def normalize_numpy_image(image):
 
 def resize_image(image, min_size=600, max_size=1024, fix_resize=False):
     # Rescaling Images
-    C, H, W = image.shape
+    H, W, C = image.shape
     min_size = min_size
     max_size = max_size
     scale1 = min_size / min(H, W)
     scale2 = max_size / max(H, W)
     scale = min(scale1, scale2)
-    image = image / 255.0
 
     if fix_resize:
         image = sktsf.resize(
-            image, (C, min_size, max_size), mode="reflect", anti_aliasing=False
+            image, (min_size, max_size, C), mode="reflect", anti_aliasing=False
         )
     else:
         image = sktsf.resize(
-            image, (C, H * scale, W * scale), mode="reflect", anti_aliasing=False
+            image, (round(H * scale), round(W * scale), C), mode="reflect", anti_aliasing=False
         )
 
     return image

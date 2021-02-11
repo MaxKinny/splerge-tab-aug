@@ -73,10 +73,9 @@ if __name__ == "__main__":
             xml_path = os.path.join(
                 configs.output_path, "predicted_xmls", image_name.split(".")[0] + ".xml"
             )
-            image = cv2.imread(image_path)
+            image = cv2.imread(image_path).astype("float32")
             H, W, C = image.shape
-            image_trans = image.transpose((2, 0, 1)).astype("float32")
-            resized_image = utils.resize_image(image_trans)
+            resized_image = utils.resize_image(image).transpose((2, 0, 1))
             input_image = utils.normalize_numpy_image(resized_image).unsqueeze(0)
 
             rpn_out, cpn_out = model(input_image.to(device))

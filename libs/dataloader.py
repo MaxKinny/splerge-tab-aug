@@ -3,9 +3,10 @@ import pickle
 import string
 import random
 
+import cv2
 import torch
 import numpy as np
-import cv2
+from torchvision import transforms
 import torchvision.transforms.functional as TF
 
 from termcolor import cprint
@@ -27,13 +28,12 @@ class SplitTableDataset(torch.utils.data.Dataset):
     def __init__(
         self,
         root,
-        transforms=None,
         fix_resize=False,
-        augment=False
+        augment=False,
+        classical_augment=False,
     ):
 
         self.fix_resize = fix_resize
-        self.transforms = transforms
         self.train_images_path = os.path.join(root, "images")
         self.train_labels_path = os.path.join(root, "gt")
         self.train_ocr_path    = os.path.join(root, "ocr")
@@ -57,7 +57,12 @@ class SplitTableDataset(torch.utils.data.Dataset):
             self.nodes, self.probs = self.read_nodes()
             print("Complete: Augmentation Data.")
 
-        self.classical_augment = False
+        self.classical_augment = classical_augment
+        if self.classical_augment:
+            self.classical_transform = transforms.Compose([
+                transforms.ColorJitter(brightness=(0.7, 1.3), contrast=(0.7,2.5), saturation=(0,2), hue=0.5),
+
+            ])
 
     def read_distributions(self):
         with open("distributions/icdar_metadata.pkl", "rb") as f:
@@ -255,14 +260,10 @@ class SplitTableDataset(torch.utils.data.Dataset):
         image, row_label, col_label = self.read_record(idx)
 
         if image.ndim == 2:
-            # reshape (H, W) -> (1, H, W)
-            image = image[np.newaxis]
-        else:
-            # transpose (H, W, C) -> (C, H, W)
-            image = image.transpose((2, 0, 1))
+            image = image[:, :, np.newaxis]
 
-        # if self.classical_augment:
-        #     # Horizontal cropping
+        # if self.classical_augment and random.random() > 0.8:
+        #     # Cropping
         #     if random.random() > 0.5:
         #         h, w = image.shape[1:]
         #         crop_w = random.randint(int(w * 0.6), w)
@@ -271,27 +272,19 @@ class SplitTableDataset(torch.utils.data.Dataset):
         #         crop_h = random.randint(int(h * 0.6), h)
         #         y = random.randint(0, (h - crop_h))
 
-        #         print("Shape before": image.shape)
         #         image = image[:, y: y+crop_h, x: x + crop_w]
-        #         print("Shape after": image.shape)
-        #         row_label = row_label[x: x+crop_w]
-        #         print("Row labels": row_label.shape)
-        #         col_label = col_label[y: y+crop_h]
-        #         print("Col labels": col_label.shape)
-                
+        #         row_label = row_label[y: y+crop_h]
+        #         col_label = col_label[x: x+crop_w]
 
-        C, H, W = image.shape
+
+        H, W, C = image.shape
         image = resize_image(image, fix_resize=self.fix_resize)
 
         # image_write = image.copy()
         # image_write = (image_write.transpose((1, 2, 0))*255).astype(np.uint8)
         # cv2.imwrite("debug/{}_image.png".format(self.filenames[idx]), image_write)
 
-        image = normalize_numpy_image(image)
-
-        image = image.numpy()
-
-        _, o_H, o_W = image.shape
+        o_H, o_W, _ = image.shape
         scale = o_H / H
 
         row_label = cv2.resize(row_label[np.newaxis, :], (o_H, 1), interpolation=cv2.INTER_NEAREST)
@@ -310,10 +303,8 @@ class SplitTableDataset(torch.utils.data.Dataset):
 
         target = [row_label, col_label]
 
-        image = image.transpose((1, 2, 0))
-
-        if self.transforms is not None:
-            image, target = self.transforms(image, target)
+        image = image.transpose((2, 0, 1))
+        image = normalize_numpy_image(image)
 
         return image, target, self.filenames[idx], W, H
 
@@ -322,11 +313,11 @@ class SplitTableDataset(torch.utils.data.Dataset):
 
 
 class MergeTableDataset(torch.utils.data.Dataset):
-    def __init__(self, root, train_features_path, train_labels_path, transforms=None):
+    def __init__(self, root, train_features_path, train_labels_path, transform=None):
         self.root = root
         self.train_features_path = train_features_path
         self.train_labels_path = train_labels_path
-        self.transforms = transforms
+        self.transforms = transform
 
         self.feature_paths_list = list(
             sorted(os.listdir(os.path.join(self.root, self.train_features_path)))

@@ -88,6 +88,11 @@ if __name__ == "__main__":
         help="Apply augmentation on the tables"
     )
     parser.add_argument(
+        "--classical_augment",
+        action="store_true",
+        help="Apply classical augmentations (cropping etc) on the tables"
+    )
+    parser.add_argument(
         "--resume",
         action="store_true",
         help="Continue training from \"last_model.pth\" in output_weight_path."
@@ -132,13 +137,12 @@ if __name__ == "__main__":
     cprint("Loading dataset...", "blue", attrs=["bold"])
     train_dataset = SplitTableDataset(
         configs.train_dir,
-        transforms=get_transform(train=True),
         fix_resize=False,
-        augment=configs.augment_tables
+        augment=configs.augment_tables,
+        classical_augment=configs.classical_augment
     )
     val_dataset = SplitTableDataset(
         configs.val_dir,
-        transforms=get_transform(train=True),
         fix_resize=False,
         augment=False
     )
@@ -207,6 +211,9 @@ if __name__ == "__main__":
         val_batch = next(val_iter)
     except StopIteration:
         val_batch = None
+
+    # for i in range(len(train_dataset)):
+    #     x = train_dataset[i]
 
     time_stamp = time.time()
     for epoch in range(start_epoch, num_epochs):

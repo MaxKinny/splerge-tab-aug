@@ -137,7 +137,7 @@ def process_files(image_dir, xml_dir, ocr_dir, out_dir):
             xml_file = os.path.join(xml_dir, file + ".xml")
             ocr_file = os.path.join(ocr_dir, file + ".pkl")
 
-            img = cv2.imread(image_file, cv2.IMREAD_GRAYSCALE)
+            img = cv2.imread(image_file)
 
             # tmp = img.copy()
             # tmp = cv2.GaussianBlur(tmp,(5,5),0)
@@ -146,7 +146,7 @@ def process_files(image_dir, xml_dir, ocr_dir, out_dir):
             # lines = cv2.dilate(lines, np.ones((3,3), np.uint8), iterations=1)
             # ocr_img = np.uint8(np.clip(np.int16(img) + np.int16(lines), 0, 255))
 
-            ocr = apply_ocr(ocr_file, Image.fromarray(img))
+            ocr = apply_ocr(ocr_file, Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)))
 
             if (
                 os.path.exists(image_file)
