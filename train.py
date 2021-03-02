@@ -64,7 +64,7 @@ if __name__ == "__main__":
         type=int,
         dest="val_every",
         help="perform validation after given steps",
-        default=10,
+        default=1,
     )
     parser.add_argument(
         "--lr",
@@ -120,6 +120,7 @@ if __name__ == "__main__":
     print("Learning Rate:\t", configs.learning_rate)
     print("Decay Rate:\t", configs.decay_rate)
     print("Augmentation:\t", configs.augment_tables)
+    print("Classical Augmentation:\t", configs.classical_augment)
     print(65 * "=")
 
     if configs.resume and configs.load_model_from:
@@ -207,18 +208,9 @@ if __name__ == "__main__":
 
     val_iter = iter(val_loader)
 
-    try:
-        val_batch = next(val_iter)
-    except StopIteration:
-        val_batch = None
-
-    # for i in range(len(train_dataset)):
-    #     x = train_dataset[i]
-
     time_stamp = time.time()
     for epoch in range(start_epoch, num_epochs):
 
-        val_loss_list = []
         for i, (images, targets, img_path, _, _) in enumerate(train_loader):
             images = images.to(device)
 
@@ -269,8 +261,17 @@ if __name__ == "__main__":
                 )
                 time_stamp = time.time()
 
-            if (i + 1) % configs.val_every == 0:
-                model.eval()
+            # if (step + 1) % configs.save_every == 0:
+        lr_scheduler.step()
+
+        if (epoch + 1) % configs.val_every == 0:
+            print(65 * "=")
+            print("Saving model weights at epoch", epoch + 1)
+            model.eval()
+            val_loss_list = []
+            cpn_loss_list = []
+            rpn_loss_list = []
+            for val_batch in val_loader:
                 with torch.no_grad():
                     val_images, val_targets, _, _, _ = val_batch
 
@@ -283,68 +284,44 @@ if __name__ == "__main__":
                     )
 
                     val_loss_list.append(val_loss.item())
-                    print(
-                        "Validation iteration: Val Loss: {:.4f}, RPN Loss: {:.4f}, CPN Loss: {:.4f}".format(
-                            val_loss,
-                            val_rpn_loss,
-                            val_cpn_loss,
-                        )
-                    )
-                    print("---")
+                    rpn_loss_list.append(val_rpn_loss.item())
+                    cpn_loss_list.append(val_cpn_loss.item())
 
-                    val_loss_list.append(val_loss.item())
-                    writer.add_scalar(
-                        "total loss val", val_loss.item(), (epoch * total_step + i)
-                    )
-                    writer.add_scalar(
-                        "rpn loss val", val_rpn_loss.item(), (epoch * total_step + i)
-                    )
-                    writer.add_scalar(
-                        "cpn loss val", val_cpn_loss.item(), (epoch * total_step + i)
-                    )
-
-                    try:
-                        val_batch = next(val_iter)
-                    except StopIteration:
-                        val_iter = iter(val_loader)
-                        val_batch = next(val_iter)
-
-            # if (step + 1) % configs.save_every == 0:
-        print(65 * "=")
-        print("Saving model weights at epoch", epoch + 1)
-
-        lr_scheduler.step()
-
-        torch.save(
-            {
-                "epoch": epoch + 1,
-                "best_val_loss": best_val_loss,
-                "scheduler": lr_scheduler.state_dict(),
-                # "iteration": step + 1,
-                "model_state_dict": model.state_dict(),
-                "optimizer_state_dict": optimizer.state_dict(),
-                # "config": configs
-            },
-            os.path.join(MODEL_STORE_PATH, "last_model.pth"),
-        )
-
-        if best_val_loss > sum(val_loss_list) / len(val_loss_list):
-            with open(os.path.join(MODEL_STORE_PATH, "best_epoch.txt"), 'w') as f:
-                f.write(str(epoch))
-            best_val_loss = sum(val_loss_list) / len(val_loss_list)   
+            writer.add_scalar("total loss val", sum(val_loss_list) / len(val_loss_list), epoch)
+            writer.add_scalar("rpn loss val", sum(rpn_loss_list) / len(val_loss_list), epoch)
+            writer.add_scalar("cpn loss val", sum(cpn_loss_list) / len(val_loss_list), epoch)
             torch.save(
                 {
                     "epoch": epoch + 1,
+                    "best_val_loss": best_val_loss,
+                    "scheduler": lr_scheduler.state_dict(),
                     # "iteration": step + 1,
                     "model_state_dict": model.state_dict(),
                     "optimizer_state_dict": optimizer.state_dict(),
                     # "config": configs
                 },
-                os.path.join(MODEL_STORE_PATH, "best_model.pth"),
-            )   
+                os.path.join(MODEL_STORE_PATH, "last_model.pth"),
+            )
+
+            print("-"*25)
+            print("Validation Loss :", sum(val_loss_list) / len(val_loss_list))
+            print("-"*25)
+
+            if best_val_loss > sum(val_loss_list) / len(val_loss_list):
+                with open(os.path.join(MODEL_STORE_PATH, "best_epoch.txt"), 'w') as f:
+                    f.write(str(epoch))
+                best_val_loss = sum(val_loss_list) / len(val_loss_list)   
+                torch.save(
+                    {
+                        "epoch": epoch + 1,
+                        # "iteration": step + 1,
+                        "model_state_dict": model.state_dict(),
+                        "optimizer_state_dict": optimizer.state_dict(),
+                        # "config": configs
+                    },
+                    os.path.join(MODEL_STORE_PATH, "best_model.pth"),
+                )   
 
         print(65 * "=")
 
         torch.cuda.empty_cache()
-
-

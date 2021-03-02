@@ -6,6 +6,7 @@ import random
 import cv2
 import torch
 import numpy as np
+from PIL import Image
 from torchvision import transforms
 import torchvision.transforms.functional as TF
 
@@ -59,10 +60,9 @@ class SplitTableDataset(torch.utils.data.Dataset):
 
         self.classical_augment = classical_augment
         if self.classical_augment:
-            self.classical_transform = transforms.Compose([
+            self.classical_transform = transforms.RandomApply([
                 transforms.ColorJitter(brightness=(0.7, 1.3), contrast=(0.7,2.5), saturation=(0,2), hue=0.5),
-
-            ])
+            ], p=0.4)
 
     def read_distributions(self):
         with open("distributions/icdar_metadata.pkl", "rb") as f:
@@ -89,7 +89,7 @@ class SplitTableDataset(torch.utils.data.Dataset):
             file_to_nodes = pickle.load(f)
 
         file_to_probs = {}
-        for filename in file_to_nodes.keys():
+        for filename in self.filenames:
             categorized = [[[] for i in range(len(self.col_steps))] for j in range(len(self.row_steps))]
 
             gauss = None
@@ -124,6 +124,7 @@ class SplitTableDataset(torch.utils.data.Dataset):
     def apply_augmentation(self, filename, table, img, ocr):
         augmentor = Augmentor(table, img, ocr)
 
+        # cv2.imwrite("debug/org.png", img)
         nodes = self.nodes[filename]
         probs = self.probs[filename]
 
@@ -140,6 +141,11 @@ class SplitTableDataset(torch.utils.data.Dataset):
         table, img, ocr = augmentor.t, augmentor.image, augmentor.ocr
         assert len(table.gtCells)==chosen_node[0]['h']
         assert len(table.gtCells[0])==chosen_node[0]['w']
+
+        # for i in range(250):
+        #     if not os.path.exists("debug/{}.png".format(i)):
+        #         cv2.imwrite("debug/{}.png".format(i), img)
+        #         break
         return table, img, ocr
 
     def read_record(self, idx):
@@ -148,7 +154,7 @@ class SplitTableDataset(torch.utils.data.Dataset):
         xml_file = os.path.join(self.train_labels_path, filename + ".xml")
         ocr_file = os.path.join(self.train_ocr_path, filename + ".pkl")
 
-        img = cv2.imread(image_file, cv2.IMREAD_GRAYSCALE)
+        img = cv2.imread(image_file)
 
         with open(ocr_file, "rb") as f:
             ocr = pickle.load(f)
@@ -181,8 +187,8 @@ class SplitTableDataset(torch.utils.data.Dataset):
                 if cell.startCol != cell.endCol:
                     cv2.rectangle(ocr_mask, (x0, y0), (x1, y1), 0, -1)
 
-        col_gt_mask = np.zeros_like(img[0, :])
-        row_gt_mask = np.zeros_like(img[:, 0])
+        col_gt_mask = np.zeros_like(img[0, :, 0])
+        row_gt_mask = np.zeros_like(img[:, 0, 0])
 
         non_zero_rows = np.append(
             np.where(np.count_nonzero(ocr_mask_row, axis=1) != 0)[0],
@@ -254,30 +260,41 @@ class SplitTableDataset(torch.utils.data.Dataset):
                 pass
 
             row_gt_mask[row - above : row + below] = 255
-        return cv2.cvtColor(img, cv2.COLOR_BGR2RGB).astype(np.float32), row_gt_mask, col_gt_mask
+        return img, row_gt_mask, col_gt_mask
 
     def __getitem__(self, idx):
         image, row_label, col_label = self.read_record(idx)
 
         if image.ndim == 2:
-            image = image[:, :, np.newaxis]
+            image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
 
-        # if self.classical_augment and random.random() > 0.8:
-        #     # Cropping
-        #     if random.random() > 0.5:
-        #         h, w = image.shape[1:]
-        #         crop_w = random.randint(int(w * 0.6), w)
-        #         x = random.randint(0, (w - crop_w))
+        # cv2.imshow("before", image.astype(np.uint8))
+        if self.classical_augment:
+            # Cropping
+            if random.random() < 0.4:
+                # print("cropping")
+                h, w = image.shape[:2]
+                crop_w = random.randint(int(w * 0.6), w)
+                x = random.randint(0, (w - crop_w))
 
-        #         crop_h = random.randint(int(h * 0.6), h)
-        #         y = random.randint(0, (h - crop_h))
+                crop_h = random.randint(int(h * 0.6), h)
+                y = random.randint(0, (h - crop_h))
 
-        #         image = image[:, y: y+crop_h, x: x + crop_w]
-        #         row_label = row_label[y: y+crop_h]
-        #         col_label = col_label[x: x+crop_w]
+                image = image[y: y+crop_h, x: x + crop_w, :]
+                row_label = row_label[y: y+crop_h]
+                col_label = col_label[x: x+crop_w]
+            image = Image.fromarray(image)
+            image = np.array(self.classical_transform(image))
 
+            # for i in range(250):
+            #     if not os.path.exists("debug/{}-classical.png".format(i)):
+            #         cv2.imwrite("debug/{}-classical.png".format(i), image)
+            #         break
+        # cv2.imshow("after", image.astype(np.uint8))
+        # cv2.waitKey(0)
 
         H, W, C = image.shape
+        image = image.astype(np.float32)
         image = resize_image(image, fix_resize=self.fix_resize)
 
         # image_write = image.copy()
@@ -306,6 +323,7 @@ class SplitTableDataset(torch.utils.data.Dataset):
         image = image.transpose((2, 0, 1))
         image = normalize_numpy_image(image)
 
+        # print(image.shape, row_label.shape, col_label.shape)
         return image, target, self.filenames[idx], W, H
 
     def __len__(self):
